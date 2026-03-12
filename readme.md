@@ -1,6 +1,6 @@
 📊 BizDash — Dashboard de Ventas
 
-Aplicación fullstack para gestión de ventas con dashboard en tiempo real, autenticación JWT y sistema de roles.
+Aplicación fullstack para gestión de ventas con dashboard en tiempo real, autenticación JWT y sistema de roles.<br>
 🌐 Demo: bizdash-psi.vercel.app
 
 Stack
