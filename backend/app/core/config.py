@@ -1,18 +1,21 @@
 from pydantic_settings import BaseSettings
+from typing import List
 
 class Settings(BaseSettings):
-    """
-    Configuración central de la aplicación.
-    Pydantic lee automáticamente las variables del archivo .env
-    """
     APP_NAME: str = "BizDash"
     DATABASE_URL: str
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
+    # En producción el frontend tendrá una URL real
+    ALLOWED_ORIGINS: str = "http://localhost:3000"
+
+    @property
+    def origins_list(self) -> List[str]:
+        return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",")]
+
     class Config:
         env_file = ".env"
 
-# Instancia única que usaremos en toda la app
 settings = Settings()

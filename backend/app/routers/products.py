@@ -71,12 +71,21 @@ def update_product(
 def delete_product(
     product_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin)  # Solo admins
+    current_user: User = Depends(require_admin)
 ):
     """Elimina un producto (solo admin)"""
+    from sqlalchemy.exc import IntegrityError
+
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
 
-    db.delete(product)
-    db.commit()
+    try:
+        db.delete(product)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail="No se puede eliminar este producto porque tiene ventas asociadas"
+        )

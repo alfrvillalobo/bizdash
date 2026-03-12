@@ -2,8 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.user import User
-from app.schemas.user import UserCreate, UserResponse, LoginRequest, TokenResponse
+from app.schemas.user import UserCreate, UserResponse, LoginRequest, TokenResponse, UserUpdate
 from app.core.security import hash_password, verify_password, create_access_token
+from typing import List
+from app.core.dependencies import get_current_user, require_admin
+
 
 router = APIRouter(prefix="/auth", tags=["Autenticación"])
 
@@ -83,3 +86,90 @@ def get_current_user_info(
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
     return user
+
+@router.get("/users", response_model=List[UserResponse])
+def get_all_users(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Lista todos los usuarios (solo admin)"""
+    return db.query(User).order_by(User.created_at.desc()).all()
+
+@router.post("/users", response_model=UserResponse, status_code=201)
+def create_user(
+    user_data: UserCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Crea un usuario desde el panel admin"""
+    existing = db.query(User).filter(User.email == user_data.email).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="El email ya está registrado")
+
+    new_user = User(
+        name=user_data.name,
+        email=user_data.email,
+        password_hash=hash_password(user_data.password),
+        role=user_data.role
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
+
+
+@router.patch("/users/{user_id}", response_model=UserResponse)
+def update_user(
+    user_id: int,
+    user_data: UserUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Actualiza nombre y/o rol de un usuario (solo admin)"""
+    if user_id == current_user.id:
+        raise HTTPException(
+            status_code=400,
+            detail="No puedes modificar tu propio usuario desde aquí"
+        )
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    update_data = user_data.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(user, field, value)
+
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.delete("/users/{user_id}", status_code=204)
+def delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Elimina un usuario (solo admin, no puede eliminarse a sí mismo)"""
+    if user_id == current_user.id:
+        raise HTTPException(
+            status_code=400,
+            detail="No puedes eliminar tu propio usuario"
+        )
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    # Verificar si tiene ventas asociadas
+    from sqlalchemy.exc import IntegrityError
+    try:
+        db.delete(user)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail="No se puede eliminar este usuario porque tiene ventas registradas"
+        )

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from app.database import get_db
 from app.models.sale import Sale
 from app.models.product import Product
@@ -76,6 +76,143 @@ def get_my_sales(
         .all()
     )
 
+@router.get("/stats/by-product")
+def get_sales_by_product(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """
+    Ventas agrupadas por producto.
+    Alimentará el gráfico de torta del dashboard.
+    """
+    results = (
+        db.query(
+            Product.name.label("product_name"),
+            func.count(Sale.id).label("sales_count"),
+            func.sum(Sale.total).label("revenue")
+        )
+        .join(Product, Sale.product_id == Product.id)
+        .group_by(Product.name)
+        .order_by(func.sum(Sale.total).desc())
+        .all()
+    )
+
+    return [
+        {
+            "name": row.product_name,
+            "sales_count": row.sales_count,
+            "revenue": round(row.revenue, 2)
+        }
+        for row in results
+    ]
+
+
+@router.get("/stats/by-seller")
+def get_sales_by_seller(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """
+    Ventas agrupadas por vendedor.
+    Alimentará el gráfico de barras del dashboard.
+    """
+    results = (
+        db.query(
+            User.name.label("seller_name"),
+            func.count(Sale.id).label("sales_count"),
+            func.sum(Sale.total).label("revenue")
+        )
+        .join(User, Sale.user_id == User.id)
+        .group_by(User.name)
+        .order_by(func.sum(Sale.total).desc())
+        .all()
+    )
+
+    return [
+        {
+            "name": row.seller_name,
+            "sales_count": row.sales_count,
+            "revenue": round(row.revenue, 2)
+        }
+        for row in results
+    ]
+    
+@router.get("/stats/my-stats")
+def get_my_stats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Estadísticas personales del vendedor autenticado.
+    Cada vendedor solo ve sus propios números.
+    """
+    # Total de ventas del vendedor
+    my_total_sales = (
+        db.query(func.count(Sale.id))
+        .filter(Sale.user_id == current_user.id)
+        .scalar()
+    )
+
+    # Ingresos totales del vendedor
+    my_total_revenue = (
+        db.query(func.sum(Sale.total))
+        .filter(Sale.user_id == current_user.id)
+        .scalar() or 0
+    )
+
+    # Ventas de hoy
+    from datetime import date
+    today_start = datetime.combine(date.today(), datetime.min.time())
+    my_today_sales = (
+        db.query(func.count(Sale.id))
+        .filter(
+            Sale.user_id == current_user.id,
+            Sale.created_at >= today_start
+        )
+        .scalar()
+    )
+
+    # Ingresos de hoy
+    my_today_revenue = (
+        db.query(func.sum(Sale.total))
+        .filter(
+            Sale.user_id == current_user.id,
+            Sale.created_at >= today_start
+        )
+        .scalar() or 0
+    )
+
+    # Ventas por día (últimos 7 días) del vendedor
+    seven_days_ago = datetime.utcnow() - timedelta(days=7)
+    daily_results = (
+        db.query(
+            func.date(Sale.created_at).label("date"),
+            func.count(Sale.id).label("sales_count"),
+            func.sum(Sale.total).label("revenue")
+        )
+        .filter(
+            Sale.user_id == current_user.id,
+            Sale.created_at >= seven_days_ago
+        )
+        .group_by(func.date(Sale.created_at))
+        .order_by(func.date(Sale.created_at))
+        .all()
+    )
+
+    return {
+        "my_total_sales": my_total_sales,
+        "my_total_revenue": round(my_total_revenue, 2),
+        "my_today_sales": my_today_sales,
+        "my_today_revenue": round(my_today_revenue, 2),
+        "daily_chart": [
+            {
+                "date": str(row.date),
+                "sales_count": row.sales_count,
+                "revenue": round(row.revenue, 2)
+            }
+            for row in daily_results
+        ]
+    }    
 
 # ✅ DESPUÉS las rutas dinámicas con {id}
 
