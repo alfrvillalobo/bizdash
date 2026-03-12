@@ -23,7 +23,7 @@ Aplicación fullstack para gestión de ventas con dashboard en tiempo real, aute
 - 📦 CRUD completo de Productos con control de stock
 - 💰 Registro de Ventas con cálculo automático
 - 👥 Gestión de Usuarios (solo Admin)
-- 📱 Diseño responsivo con menú hamburguesa
+- 📱 Diseño responsivo
 
 ---
 
